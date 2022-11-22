@@ -1,0 +1,126 @@
+---
+title: "LBB Time Series and Forecasting - Delhi Climate"
+author: "Rizki"
+date: "2022-07-15"
+output:
+  html_document :
+    number_sections: true
+    toc: true
+    toc_depth: 3
+    toc_float:
+      collapsed: false
+    df_print: paged
+    theme: united
+    highlight: breezedark
+  pdf_document:
+    latex_engine: xelatex
+---
+# Intro
+Climate is the habit and character of the weather that occurs in a place or area. In this case study, we will predict the average climate temperature that occurs in the city of Delhi, India.
+
+## Load Library & Read Data
+```{r, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(forecast)
+library(lubridate)
+library(TTR)
+library(fpp)
+library(xts)
+library(tseries)
+library(TSstudio)
+library(padr)
+library(MLmetrics)
+```
+
+```{r}
+climate <- read.csv("DailyDelhiClimate.csv")
+```
+
+# Data Pre-Processing
+First, we want to take the columns that we use to predict, namely the date and meantemp columns
+```{r}
+climate_clean <- climate %>% 
+  select(date,meantemp)
+```
+Next, we want to change data type column date to date
+```{r}
+climate_clean$date <- ymd(climate_clean$date)
+```
+Then, after that we sort the data from the oldest date to the newest date, and we fill in the missing date with the pad function
+```{r}
+climate_clean <- climate_clean %>% 
+  arrange(date) %>% 
+  pad()
+```
+
+Next, we want to check whether there is a missing value in the data
+```{r}
+colSums(is.na(climate_clean))
+```
+Good, we don't have missing value in this data
+
+# Time Series Object
+
+```{r}
+climate_ts <- ts(climate_clean$meantemp, start=c(2013,1), frequency = 365)
+autoplot(climate_ts)
+```
+Next, we want to know if our time series object has trend and seasonal properties
+```{r}
+climate_dc <- decompose(climate_ts)
+autoplot(climate_dc)
+```
+
+# Cross Validation
+```{r}
+climate_train <- head(climate_ts, n = -365)
+climate_test <- tail(climate_ts, n=365)
+```
+
+# Modelling
+## Holt Winters Model
+```{r}
+model_hw <- HoltWinters(climate_train)
+```
+
+## Arima Model
+```{r}
+model_arima <- stlm(climate_train,method="arima")
+```
+
+
+# Forecasting & Evaluation
+```{r}
+# Model Holt Winters
+model_hw_forecast <- forecast(object = model_hw, h = 365)
+holt_winters_forecast <- as.vector(model_hw_forecast$mean)
+accuracy_holt_winters <- accuracy(holt_winters_forecast,climate_test)
+accuracy_holt_winters
+
+# Model Arima
+forecast_arima <- forecast(model_arima, h=365)
+arima_forecast <- as.vector(forecast_arima$mean)
+accuracy_arima <- accuracy(arima_forecast,climate_test)
+accuracy_arima
+```
+
+We will choose the model that has the smallest MAE value, namely the ARIMA model
+```{r}
+test_forecast(actual = climate_ts, forecast.obj = forecast_arima, train = climate_train, test = climate_test)
+```
+
+# Assumption
+## Normality of residuals
+```{r}
+shapiro.test(model_arima$residuals)
+```
+Because p-value < 0.05, it means not normality for residuals.
+
+## No-Autocorrelation for residuals
+```{r}
+Box.test(x=model_arima$residuals)
+```
+Because p-value > 0.05, it means no-autocorrelation for residuals.
+
+# Conclusion
+Based on the MAE of the Holt Winters model and the Arima model, we will choose the smallest MAE of the two models, namely the Arima model to predict the weather in Delhi, India. Then based on the normality of residuals, the Arima model is not normality for residuals. In addition, the Arima model also have no-autocorrelation for residuals.
